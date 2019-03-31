@@ -39,6 +39,16 @@ typedef enum {
   R_DRIFT_LOW = 6
 } SampleReadyState;
 
+const static char ReadyStateName[7][7] = {
+  { 'I', 'N', 'I', 'T', '\0' },
+  { 'H', 'S', 'T', 'A', 'R', 'T', '\0' },
+  { 'H', 'E', 'N', 'D', '\0' },
+  { 'L', 'S', 'T', 'A', 'R', 'T', '\0' },
+  { 'L', 'E', 'N', 'D', '\0' },
+  { 'D', 'H', 'I', 'G', 'H', '\0' },
+  { 'D', 'L', 'O', 'W', '\0' },
+};
+
 // Sampler Thread instance
 static Thread sampler;
 // Physic-layer thread reference
@@ -101,19 +111,17 @@ synching_state_machine(int value)
       us_timestamp_t shift_high = t_high >> 6;
       us_timestamp_t shift_low = t_low >> 6;
 
-      printf("(diff, shift_high, shift_low) : (%llu, %llu, %llu)\r\n");
+      // printf("(diff, shift_high, shift_low, t_high, t_low) : (%llu, %llu, %llu, %llu, %llu)\r\n", diff, shift_high, shift_low, t_high, t_low);
 
-      // >> 6 is analog to divide by 64, roughly equivalent to multiply by 1.5%
-      printf("t_high, 1.5, diff : %llu, %llu, %u\r\n", t_high, t_high >> 6, diff);
-      if ((t_high >> 6) <= diff && t_high > 0) {
+      if (shift_high >= diff && t_high > 0) {
         state = READY;
         period = (t_high + t_low) >> 2;
-        printf("Adjusted sampling period: %d (%llu, %llu)\r\n", period, t_high, t_low);
+        //printf("period: %llu\r\n", period);
         sampler_ticker.detach();
         sampler_ticker.attach_us(sampler_tick_routine, period);
 
         // This means that we have the value "010" in the MSB of the first byte.
-        printf("Sending signal 4 (0x40)\r\n");
+        //printf("Sending signal 4 (0x40)\r\n");
         physic->flags_set(0x04);
 
         state = READY;
@@ -153,29 +161,39 @@ ready_state_machine(int value)
 
   case R_DRIFT_LOW:
     if (value == 1) {
+      //printf("There is a one\r\n");
       ready_state = R_HIGH_END;
       physic->flags_set(0x02);
     } else {
+      //printf("There is a bad zero\r\n");
       state = ERROR;
     }
     break;
 
   case R_DRIFT_HIGH:
     if (value == 0) {
+      //printf("There is a zero\r\n");
       ready_state = R_LOW_END;
       physic->flags_set(0x02);
     } else {
+      //printf("There is a bad one\r\n");
       state = ERROR;
     }
     break;
 
   case R_HIGH_END:  //passthrough
-  case R_LOW_END:   //passthrough
-  case R_INIT:
+  case R_LOW_END:
     if (value == 0) {
       ready_state = R_LOW_START;
     } else {
       ready_state = R_HIGH_START;
+    }
+    break;
+  case R_INIT:
+    if (value == 0) {
+      ready_state = R_LOW_END;
+    } else {
+      ready_state = R_DRIFT_HIGH;
     }
     break;
   default:
@@ -197,12 +215,14 @@ sampler_th(void)
     sampler_tick.wait(osWaitForever);
     value = irx;
 
+    //printf("Current state - %s\r\n", SampleStateName[state]);
     switch(state){
       case SYNCHING:
         synching_state_machine(value);
         break;
 
       case READY:
+        //printf("Ready state: %s\r\n", ReadyStateName[ready_state]);
         ready_state_machine(value);
         break;
 
