@@ -17,12 +17,10 @@
 #include <mbed.h>
 #include <rtos.h>
 
-#include "Logger.h"
-
 #define DEBUG_SAMPLER "SAMPLER"
 
 // The maximum frequency to start with, in nano-seconds.
-#define MAX_SAMPLING_PERIOD 1000 // 1ms
+#define MAX_SAMPLING_PERIOD 500 // 0.5ms
 
 // This synchronize the thread with the ticker.
 extern Semaphore sampler_tick;
