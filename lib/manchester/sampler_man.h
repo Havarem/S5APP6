@@ -17,6 +17,8 @@
 #include <mbed.h>
 #include <rtos.h>
 
+#include "Logger.h"
+
 #define DEBUG_SAMPLER "SAMPLER"
 
 // The maximum frequency to start with, in nano-seconds.
@@ -28,7 +30,7 @@ extern Semaphore sampler_tick;
 /**
  * This starts the sampler thread.
  * */
-void start_sampler_th(PinName, Thread *);
+void start_sampler_th(Thread *);
 
 /**
  * Return the current period in which the system is sampling.

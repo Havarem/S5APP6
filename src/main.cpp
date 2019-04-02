@@ -4,6 +4,7 @@
 #include "Logger.h"
 #include "sampler_man.h"
 #include "physic_listener.h"
+#include "application_listener.h"
 
 DigitalOut led(LED1);
 
@@ -15,8 +16,9 @@ main()
   osThreadId id = ThisThread::get_id();
   osThreadSetPriority(id, osPriorityRealtime1);
 
-  start_listener_th();
-  start_sampler_th(p21, get_listener());
+  //start_application_th();
+  start_listener_th(&link_bytes_pool);
+  start_sampler_th(get_listener());
 
   osThreadSetPriority(id, osPriorityIdle);
 

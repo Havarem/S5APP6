@@ -6,66 +6,40 @@ Semaphore sampler_tick;
  * Sampler state
  * */
 typedef enum {
-  SYNCHING = 0,
-  READY = 1,
-  ERROR = 2
+  WAITING = 0,
+  SYNCHING_HIGH = 1,
+  SYNCHING_LOW = 2,
+  INIT = 3,
+  VAR = 4,
+  EXP_1 = 5,
+  ERROR = 6
 } SampleState;
 
-const static char SampleStateName[3][9] = {
-  { 'S', 'Y', 'N', 'C', 'H', 'I', 'N', 'G', '\0' },
-  { 'R', 'E', 'A', 'D', 'Y', '\0' },
+const static char StateName[7][9] = {
+  {'W', 'A', 'I', 'T', 'I', 'N', 'G', '\0'},
+  {'S', 'Y', 'N', 'C', '-', 'H', '\0'},
+  {'S', 'Y', 'N', 'C', '-', 'L', '\0'},
+  {'I', 'N', 'I', 'T', '\0'},
+  {'V', 'A', 'R', '\0'},
+  {'E', 'X', 'P', '-', '1', '\0'},
   { 'E', 'R', 'R', 'O', 'R', '\0' }
 };
 
-/**
- * Different states in the synching pathway
- * */
-typedef enum {
-  S_WAITING = 0,
-  S_SYNCHING_HIGH = 1,
-  S_SYNCHING_LOW = 2
-} SampleSynchingState;
-
-/**
- *
- * */
-typedef enum {
-  R_INIT = 0,
-  R_HIGH_START = 1,
-  R_HIGH_END = 2,
-  R_LOW_START = 3,
-  R_LOW_END = 4,
-  R_DRIFT_HIGH = 5,
-  R_DRIFT_LOW = 6
-} SampleReadyState;
-
-const static char ReadyStateName[7][7] = {
-  { 'I', 'N', 'I', 'T', '\0' },
-  { 'H', 'S', 'T', 'A', 'R', 'T', '\0' },
-  { 'H', 'E', 'N', 'D', '\0' },
-  { 'L', 'S', 'T', 'A', 'R', 'T', '\0' },
-  { 'L', 'E', 'N', 'D', '\0' },
-  { 'D', 'H', 'I', 'G', 'H', '\0' },
-  { 'D', 'L', 'O', 'W', '\0' },
-};
-
 // Sampler Thread instance
-static Thread sampler;
+static Thread sampler(osPriorityRealtime, 2048);
 // Physic-layer thread reference
 static Thread *physic;
-// Sampler Ticker instance
-static Ticker sampler_ticker;
-// Signal to listen
-static PinName rx;
+
+static InterruptIn signal(p21);
 
 static Timer period_timer;
+// Sampler period in nano-second
+static us_timestamp_t double_period;
 // Sampler period in nano-second
 static us_timestamp_t period;
 
 // Sampler state-machine current states
 static SampleState state;
-static SampleSynchingState synching_state;
-static SampleReadyState ready_state;
 
 /**
  * ISR for the Sampler Ticker.
@@ -78,125 +52,119 @@ sampler_tick_routine(void)
 
 static us_timestamp_t t_high = 0;
 static us_timestamp_t t_low = 0;
+static us_timestamp_t interval;
 
 static inline void
-synching_state_machine(int value)
+state_machine(int value)
 {
+  us_timestamp_t interval_range;
+  us_timestamp_t interval_margin;
+  uint32_t multiple = 0;
+  //Logger::getLogger().logInfo(DEBUG_SAMPLER, "Flag: %s", StateName[state]);
 
-  switch (synching_state) {
-  case S_WAITING:
+  if (state == INIT || state == VAR || state == EXP_1) {
+    period_timer.stop();
+    interval = period_timer.read_high_resolution_us();
+    period_timer.reset();
+    period_timer.start();
+
+    interval_range = interval >> 6;
+    interval_margin = interval - interval_range;
+
+    if (interval_margin > double_period) {
+      //Logger::getLogger().logDebug(DEBUG_SAMPLER, "Seems to be higher than 2 periods");
+      //Logger::getLogger().logDebug(DEBUG_SAMPLER, "%llu, %llu", double_period, interval_margin);
+      state = ERROR;
+    } else if (interval_margin > period) {
+      multiple = 2;
+      if (state == EXP_1) {
+        state = ERROR;
+      }
+    } else {
+      if (state == VAR) {
+        state = EXP_1;
+      } else if (state == EXP_1) {
+        state = VAR;
+      }
+      multiple = 1;
+    }
+  }
+
+  switch (state) {
+  case WAITING:
     if (value == 1) {
-      synching_state = S_SYNCHING_HIGH;
+      state = SYNCHING_HIGH;
       period_timer.reset();
       period_timer.start();
     }
     break;
 
-  case S_SYNCHING_HIGH:
+  case SYNCHING_HIGH:
     if (value == 0) {
       period_timer.stop();
       t_high = period_timer.read_high_resolution_us();
       period_timer.reset();
       period_timer.start();
-      synching_state = S_SYNCHING_LOW;
+      state = SYNCHING_LOW;
     }
     break;
 
-  case S_SYNCHING_LOW:
+  case SYNCHING_LOW:
     if (value == 1) {
       period_timer.stop();
       t_low = period_timer.read_high_resolution_us();
+      period_timer.reset();
+      period_timer.start();
 
       us_timestamp_t diff = t_high > t_low ? t_high - t_low : t_low - t_high;
       us_timestamp_t shift_high = t_high >> 6;
-      us_timestamp_t shift_low = t_low >> 6;
-
-      // printf("(diff, shift_high, shift_low, t_high, t_low) : (%llu, %llu, %llu, %llu, %llu)\r\n", diff, shift_high, shift_low, t_high, t_low);
 
       if (shift_high >= diff && t_high > 0) {
-        state = READY;
-        period = (t_high + t_low) >> 2;
-        //printf("period: %llu\r\n", period);
-        sampler_ticker.detach();
-        sampler_ticker.attach_us(sampler_tick_routine, period);
+        double_period = t_high;
+        period = t_high >> 1;
 
         // This means that we have the value "010" in the MSB of the first byte.
-        //printf("Sending signal 4 (0x40)\r\n");
         physic->flags_set(0x04);
 
-        state = READY;
-        ready_state = R_INIT;
+        state = INIT;
       } else {
+        Logger::getLogger().logDebug(DEBUG_SAMPLER, "Weird rise not equal to 1");
         state = ERROR;
       }
     }
     break;
 
-  default:
-    break;
-  }
-}
-
-static inline void
-ready_state_machine(int value)
-{
-  switch (ready_state) {
-  case R_HIGH_START:
-    if (value == 0) {
-      ready_state = R_LOW_END;
-      physic->flags_set(0x02);
+  case INIT:
+    if (interval_margin > period) {
+      multiple = 2;
     } else {
-      ready_state = R_DRIFT_HIGH;
+      Logger::getLogger().logDebug(DEBUG_SAMPLER, "%llu, %llu", period, interval_margin);
+      multiple = 1;
     }
-    break;
 
-  case R_LOW_START:
-    if (value == 1) {
-      ready_state = R_HIGH_END;
-      physic->flags_set(0x01);
+    if (multiple == 2) {
+      physic->flags_set((value == 0) ? 0x02 : 0x01);
+      state = VAR;
     } else {
-      ready_state = R_DRIFT_LOW;
-    }
-    break;
-
-  case R_DRIFT_LOW:
-    if (value == 1) {
-      //printf("There is a one\r\n");
-      ready_state = R_HIGH_END;
-      physic->flags_set(0x02);
-    } else {
-      //printf("There is a bad zero\r\n");
+      Logger::getLogger().logDebug(DEBUG_SAMPLER, "No 2 periods in INIT");
       state = ERROR;
     }
     break;
 
-  case R_DRIFT_HIGH:
-    if (value == 0) {
-      //printf("There is a zero\r\n");
-      ready_state = R_LOW_END;
-      physic->flags_set(0x02);
-    } else {
-      //printf("There is a bad one\r\n");
-      state = ERROR;
-    }
+  case VAR:
+    Logger::getLogger().logDebug(DEBUG_SAMPLER, "VAR");
+    physic->flags_set((value == 0) ? 0x02 : 0x01);
     break;
 
-  case R_HIGH_END:  //passthrough
-  case R_LOW_END:
-    if (value == 0) {
-      ready_state = R_LOW_START;
-    } else {
-      ready_state = R_HIGH_START;
-    }
+  case EXP_1:
+    Logger::getLogger().logDebug(DEBUG_SAMPLER, "EXP_1");
     break;
-  case R_INIT:
+
+  case ERROR:
+    Logger::getLogger().logDebug(DEBUG_SAMPLER, "We have an error");
     if (value == 0) {
-      ready_state = R_LOW_END;
-    } else {
-      ready_state = R_DRIFT_HIGH;
+      state = WAITING;
     }
-    break;
-  default:
     break;
   }
 }
@@ -209,47 +177,24 @@ sampler_th(void)
 {
   int value;
 
-  DigitalIn irx(rx);
-
   while(1) {
     sampler_tick.wait(osWaitForever);
-    value = irx;
-
-    //printf("Current state - %s\r\n", SampleStateName[state]);
-    switch(state){
-      case SYNCHING:
-        synching_state_machine(value);
-        break;
-
-      case READY:
-        //printf("Ready state: %s\r\n", ReadyStateName[ready_state]);
-        ready_state_machine(value);
-        break;
-
-      case ERROR:
-        state = SYNCHING;
-        synching_state = S_WAITING;
-        ready_state = R_INIT;
-        break;
-
-      default:
-        break;
-    }
+    value = signal;
+    //Logger::getLogger().logDebug(DEBUG_SAMPLER, "Valeur lu: %d", value);
+    state_machine(value);
   }
 }
 
 void
-start_sampler_th(PinName _rx, Thread * _phy)
+start_sampler_th(Thread * _phy)
 {
-  rx = _rx;
-  period = MAX_SAMPLING_PERIOD;
-  state = SYNCHING;
-  synching_state = S_WAITING;
-  ready_state = R_INIT;
+  state = WAITING;
   physic = _phy;
   sampler.start(sampler_th);
-  sampler_ticker.attach_us(sampler_tick_routine, period);
-  sampler.set_priority(osPriorityRealtime);
+  printf("Sampler id: %x\r\n", sampler.get_id());
+
+  signal.rise(sampler_tick_routine);
+  signal.fall(sampler_tick_routine);
 }
 
 us_timestamp_t
