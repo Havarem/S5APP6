@@ -72,8 +72,6 @@ state_machine(int value)
     interval_margin = interval - interval_range;
 
     if (interval_margin > double_period) {
-      //Logger::getLogger().logDebug(DEBUG_SAMPLER, "Seems to be higher than 2 periods");
-      //Logger::getLogger().logDebug(DEBUG_SAMPLER, "%llu, %llu", double_period, interval_margin);
       state = ERROR;
     } else if (interval_margin > period) {
       multiple = 2;
@@ -128,40 +126,33 @@ state_machine(int value)
 
         state = INIT;
       } else {
-        Logger::getLogger().logDebug(DEBUG_SAMPLER, "Weird rise not equal to 1");
+        //Logger::getLogger().logDebug(DEBUG_SAMPLER, "Weird rise not equal to 1");
         state = ERROR;
       }
     }
     break;
 
   case INIT:
-    if (interval_margin > period) {
-      multiple = 2;
-    } else {
-      Logger::getLogger().logDebug(DEBUG_SAMPLER, "%llu, %llu", period, interval_margin);
-      multiple = 1;
-    }
-
     if (multiple == 2) {
       physic->flags_set((value == 0) ? 0x02 : 0x01);
       state = VAR;
     } else {
-      Logger::getLogger().logDebug(DEBUG_SAMPLER, "No 2 periods in INIT");
+      //::getLogger().logDebug(DEBUG_SAMPLER, "No 2 periods in INIT");
       state = ERROR;
     }
     break;
 
   case VAR:
-    Logger::getLogger().logDebug(DEBUG_SAMPLER, "VAR");
+    //Logger::getLogger().logDebug(DEBUG_SAMPLER, "VAR");
     physic->flags_set((value == 0) ? 0x02 : 0x01);
     break;
 
   case EXP_1:
-    Logger::getLogger().logDebug(DEBUG_SAMPLER, "EXP_1");
+    //Logger::getLogger().logDebug(DEBUG_SAMPLER, "EXP_1");
     break;
 
   case ERROR:
-    Logger::getLogger().logDebug(DEBUG_SAMPLER, "We have an error");
+    //Logger::getLogger().logDebug(DEBUG_SAMPLER, "We have an error");
     if (value == 0) {
       state = WAITING;
     }

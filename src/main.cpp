@@ -6,6 +6,11 @@
 #include "physic_listener.h"
 #include "application_listener.h"
 
+#include "manchester.h"
+#include "physic.h"
+#include "link.h"
+#include "transport.h"
+
 DigitalOut led(LED1);
 
 int
@@ -16,13 +21,21 @@ main()
   osThreadId id = ThisThread::get_id();
   osThreadSetPriority(id, osPriorityRealtime1);
 
-  //start_application_th();
+  start_application_th();
   start_listener_th(&link_bytes_pool);
   start_sampler_th(get_listener());
 
-  osThreadSetPriority(id, osPriorityIdle);
+  DigitalOut led(LED1);
+  start_write();
 
-  ThisThread::sleep_for(osWaitForever);
+  osThreadSetPriority(id, osPriorityNormal);
+  while(1)
+  {
+    send_messages("ABC", 3);
+    led = !led;
+    ThisThread::sleep_for(30000);
+  }
+
 }
 
 /*void

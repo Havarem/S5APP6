@@ -18,7 +18,7 @@ listener_th(void)
     uint32_t flags = ThisThread::flags_get();
     //Logger::getLogger().logDebug(DEBUG_LISTENER, "The flag %d\r\n", flags);
 
-    Logger::getLogger().logDebug(DEBUG_LISTENER, "Flag, position, current_byte = (%d, %d, 0x%02x)", flags, position, current_byte);
+    //Logger::getLogger().logDebug(DEBUG_LISTENER, "Flag, position, current_byte = (%d, %d)", flags, position);
     switch (flags) {
       case 1:
         if (position == 0) {
@@ -67,7 +67,6 @@ listener_th(void)
         position = 7;
         break;
     }
-
 
     ThisThread::flags_clear(flags);
   }

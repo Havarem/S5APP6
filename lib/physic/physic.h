@@ -1,22 +1,25 @@
 #ifndef __S5APP6_PHYSIC_H
 #define __S5APP6_PHYSIC_H
 
-#include <mbed.h>
-#include <rtos.h>
+#include "mbed.h"
+#include "rtos.h"
 
+#include "trame.h"
 #include "manchester.h"
 
-typedef struct bit_message_t {
-  char message[80];
+#define BIT_PERIOD 200000
 
-  // In bytes
-  char length;
-} bit_message_t;
+extern Thread write_th;
 
-extern Mail<bit_message_t, 10> messages_to_send;
-extern char tick;
 
-int
-write_message();
+void write(void);
+
+void send_message_to_phy(trame_t &);
+
+void bit_ready_interupt(void);
+
+void start_write();
+
+
 
 #endif

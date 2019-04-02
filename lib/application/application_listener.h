@@ -5,6 +5,7 @@
 #include <rtos.h>
 
 #include "Logger.h"
+#include "crc.h"
 
 #define PREAMBULE 0x55
 #define START 0x7E

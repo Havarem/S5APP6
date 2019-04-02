@@ -18,4 +18,7 @@ void bit_to_write(char *, char);
  * */
 char bit_to_read(char[2]);
 
+
+void to_manchester(char[2], char);
+
 #endif
